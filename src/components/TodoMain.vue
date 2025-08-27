@@ -41,19 +41,19 @@
                 class="todo-list-box-btn"
                 :class="{ active: currentFilter === 'pending' }"
                 @click="setFilter('pending')"
-            >待办事项<span>{{todos.filter(item=>!item.isComplete).length}}</span></button>
+            >待办事项<span>{{todos.filter(item=>!item.Complete).length}}</span></button>
             <button 
                 class="todo-list-box-btn"
                 :class="{ active: currentFilter === 'completed' }"
                 @click="setFilter('completed')"
-            >已完成<span>{{todos.filter(item=>item.isComplete).length}}</span></button>
+            >已完成<span>{{todos.filter(item=>item.Complete).length}}</span></button>
         </div>
         <ul class="todo-list">
-            <li v-for="item in filteredTodos" :key="item.id" class="todo-item" :class="{ completed: item.isComplete }">
+            <li v-for="item in filteredTodos" :key="item.id" class="todo-item" :class="{ completed: item.Complete }">
                 <div class="todo-content">
                     <input 
                         type="checkbox" 
-                        v-model="item.isComplete" 
+                        v-model="item.Complete" 
                         class="todo-checkbox"
                     >
                     <input 
@@ -62,7 +62,7 @@
                         v-model="item.title"
                         class="edit-input"
                     >
-                    <span v-else class="todo-text" :class="{ 'completed-text': item.isComplete }">
+                    <span v-else class="todo-text" :class="{ 'completed-text': item.Complete }">
                         {{ item.title }}
                     </span>
                 </div>
@@ -106,9 +106,9 @@ let currentFilter=ref('all') // 当前过滤状态：all, pending, completed
 const filteredTodos = computed(() => {
     switch (currentFilter.value) {
         case 'pending':
-            return todos.filter(item => !item.isComplete)
+            return todos.filter(item => !item.Complete)
         case 'completed':
-            return todos.filter(item => item.isComplete)
+            return todos.filter(item => item.Complete)
         case 'all':
         default:
             return todos
@@ -118,7 +118,7 @@ const filteredTodos = computed(() => {
 function addTodo(){
     let title=todo.value.trim()
     if(title!==""){
-        todos.push({id:nanoid(),title:title,edit:false,isComplete:false})
+        todos.push({id:nanoid(),title:title,edit:false,Complete:false})
         localStorage.setItem("todos",JSON.stringify(todos))
         todo.value=""
     }
@@ -136,20 +136,20 @@ function todoComplete(id){
     localStorage.setItem("todos",JSON.stringify(todos))
 }
 function deleteComplete(){
-    const remain = todos.filter(item => !item.isComplete)
+    const remain = todos.filter(item => !item.Complete)
     todos.length = 0               // 清空原数组
     todos.push(...remain)          // 再把保留项推回去（保持同一个代理对象）
     localStorage.setItem("todos",JSON.stringify(todos))
 }
 function selectAll(){
     todos.forEach(item => {
-        item.isComplete = true
+        item.Complete = true
     })
     localStorage.setItem("todos",JSON.stringify(todos))
 }
 function cancelSelectAll(){
     todos.forEach(item => {
-        item.isComplete = false
+        item.Complete = false
     })
     localStorage.setItem("todos",JSON.stringify(todos))
 }
