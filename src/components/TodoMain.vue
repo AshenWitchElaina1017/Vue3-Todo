@@ -1,20 +1,55 @@
 <template>
     <div class="todo-main">
         <div class="input-section">
-            <input 
-                type="text" 
-                v-model="todo" 
-                @keyup.enter="addTodo" 
-                placeholder="请输入待办事项"
-                class="todo-input"
-            >
-            <button @click="addTodo" class="add-btn">添加</button>
-            <button @click="selectAll" v-if="todos.length>0" class="add-btn">全选</button>
-            <button @click="cancelSelectAll" v-if="todos.length>0" class="add-btn">取消全选</button>
-            <button @click="deleteComplete" class="clear-btn">删除已完成</button>
+            <div class="input-group">
+                <input 
+                    type="text" 
+                    v-model="todo" 
+                    @keyup.enter="addTodo" 
+                    placeholder="请输入待办事项"
+                    class="todo-input"
+                >
+                <button @click="addTodo" class="add-btn primary">
+                    <span class="btn-icon">+</span>
+                    添加
+                </button>
+            </div>
+            <div class="action-buttons" v-if="todos.length>0">
+                <div class="button-group">
+                    <button @click="selectAll" class="action-btn secondary">
+                        <span class="btn-icon">✓</span>
+                        全选
+                    </button>
+                    <button @click="cancelSelectAll" class="action-btn secondary">
+                        <span class="btn-icon">✗</span>
+                        取消全选
+                    </button>
+                </div>
+                <button @click="deleteComplete" class="action-btn danger">
+                    <span class="btn-icon">🗑</span>
+                    删除已完成
+                </button>
+            </div>
+        </div>
+        <div class="todo-list-box" v-if="todos.length>0">
+            <button 
+                class="todo-list-box-btn" 
+                :class="{ active: currentFilter === 'all' }"
+                @click="setFilter('all')"
+            >全部<span>{{todos.length}}</span></button>
+            <button 
+                class="todo-list-box-btn"
+                :class="{ active: currentFilter === 'pending' }"
+                @click="setFilter('pending')"
+            >待办事项<span>{{todos.filter(item=>!item.isComplete).length}}</span></button>
+            <button 
+                class="todo-list-box-btn"
+                :class="{ active: currentFilter === 'completed' }"
+                @click="setFilter('completed')"
+            >已完成<span>{{todos.filter(item=>item.isComplete).length}}</span></button>
         </div>
         <ul class="todo-list">
-            <li v-for="item in todos" :key="item.id" class="todo-item" :class="{ completed: item.isComplete }">
+            <li v-for="item in filteredTodos" :key="item.id" class="todo-item" :class="{ completed: item.isComplete }">
                 <div class="todo-content">
                     <input 
                         type="checkbox" 
@@ -46,17 +81,39 @@
                 </div>
             </li>
         </ul>
-        <div v-if="todos.length === 0" class="empty-state">
-            暂无待办事项，添加一个开始吧！
+        <div v-if="filteredTodos.length === 0" class="empty-state">
+            <template v-if="todos.length === 0">
+                暂无待办事项，添加一个开始吧！
+            </template>
+            <template v-else-if="currentFilter === 'pending'">
+                暂无待办事项，所有任务都已完成！
+            </template>
+            <template v-else-if="currentFilter === 'completed'">
+                暂无已完成的任务
+            </template>
         </div>
     </div>
 </template>
 
 <script setup>
-import { ref,reactive,watch } from 'vue'
+import { ref,reactive,watch,computed } from 'vue'
 import { nanoid } from 'nanoid'
 let todo=ref("")
 let todos=reactive(JSON.parse(localStorage.getItem("todos"))||[])
+let currentFilter=ref('all') // 当前过滤状态：all, pending, completed
+
+// 计算过滤后的任务列表
+const filteredTodos = computed(() => {
+    switch (currentFilter.value) {
+        case 'pending':
+            return todos.filter(item => !item.isComplete)
+        case 'completed':
+            return todos.filter(item => item.isComplete)
+        case 'all':
+        default:
+            return todos
+    }
+})
 
 function addTodo(){
     let title=todo.value.trim()
@@ -96,6 +153,11 @@ function cancelSelectAll(){
     })
     localStorage.setItem("todos",JSON.stringify(todos))
 }
+
+// 设置过滤状态
+function setFilter(filter) {
+    currentFilter.value = filter
+}
 </script>
 
 <style scoped>
@@ -108,10 +170,76 @@ function cancelSelectAll(){
 }
 
 .input-section {
+    margin-bottom: 25px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.input-group {
     display: flex;
     gap: 10px;
-    margin-bottom: 25px;
+    align-items: stretch;
+}
+
+.action-buttons {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 15px;
     flex-wrap: wrap;
+}
+
+.button-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.todo-list-box {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.todo-list-box-btn {
+    padding: 8px 16px;
+    border: 2px solid #e1e8ed;
+    border-radius: 20px;
+    background: white;
+    color: #7f8c8d;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.todo-list-box-btn:hover {
+    border-color: #3498db;
+    color: #3498db;
+    transform: translateY(-1px);
+}
+
+.todo-list-box-btn.active {
+    background: #3498db;
+    border-color: #3498db;
+    color: white;
+    font-weight: 500;
+}
+
+.todo-list-box-btn span {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    padding: 2px 6px;
+    margin-left: 6px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.todo-list-box-btn.active span {
+    background: rgba(255, 255, 255, 0.3);
 }
 
 .todo-input {
@@ -130,35 +258,62 @@ function cancelSelectAll(){
     box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
 }
 
-.add-btn, .clear-btn, .delete-btn, .edit-btn, .complete-btn {
+.add-btn, .action-btn, .delete-btn, .edit-btn, .complete-btn {
     padding: 12px 20px;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.3s ease;
     min-width: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    position: relative;
+    overflow: hidden;
 }
 
-.add-btn {
-    background-color: #3498db;
+.add-btn.primary {
+    background: linear-gradient(135deg, #3498db, #2980b9);
     color: white;
+    box-shadow: 0 2px 8px rgba(52, 152, 219, 0.3);
 }
 
-.add-btn:hover {
-    background-color: #2980b9;
-    transform: translateY(-1px);
+.add-btn.primary:hover {
+    background: linear-gradient(135deg, #2980b9, #21618c);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(52, 152, 219, 0.4);
 }
 
-.clear-btn {
-    background-color: #e74c3c;
+.action-btn.secondary {
+    background: linear-gradient(135deg, #95a5a6, #7f8c8d);
     color: white;
+    box-shadow: 0 2px 6px rgba(149, 165, 166, 0.3);
 }
 
-.clear-btn:hover {
-    background-color: #c0392b;
+.action-btn.secondary:hover {
+    background: linear-gradient(135deg, #7f8c8d, #5d6d7e);
     transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(149, 165, 166, 0.4);
+}
+
+.action-btn.danger {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    color: white;
+    box-shadow: 0 2px 8px rgba(231, 76, 60, 0.3);
+}
+
+.action-btn.danger:hover {
+    background: linear-gradient(135deg, #c0392b, #922b21);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(231, 76, 60, 0.4);
+}
+
+.btn-icon {
+    font-size: 16px;
+    font-weight: bold;
 }
 
 .todo-list {
@@ -271,12 +426,51 @@ function cancelSelectAll(){
 
 @media (max-width: 600px) {
     .input-section {
+        gap: 12px;
+    }
+    
+    .input-group {
         flex-direction: column;
     }
     
     .todo-input {
         min-width: 100%;
-        margin-bottom: 10px;
+        margin-bottom: 0;
+    }
+    
+    .action-buttons {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+    
+    .button-group {
+        justify-content: center;
+    }
+    
+    .add-btn, .action-btn {
+        padding: 10px 16px;
+        font-size: 13px;
+        min-width: 70px;
+    }
+    
+    .btn-icon {
+        font-size: 14px;
+    }
+    
+    .todo-list-box {
+        gap: 6px;
+    }
+    
+    .todo-list-box-btn {
+        padding: 6px 12px;
+        font-size: 12px;
+    }
+    
+    .todo-list-box-btn span {
+        padding: 1px 4px;
+        margin-left: 4px;
+        font-size: 10px;
     }
     
     .todo-item {
@@ -291,6 +485,21 @@ function cancelSelectAll(){
     
     .todo-actions {
         justify-content: center;
+    }
+}
+
+@media (max-width: 480px) {
+    .action-buttons {
+        gap: 8px;
+    }
+    
+    .button-group {
+        gap: 6px;
+        flex-direction: column;
+    }
+    
+    .action-btn.danger {
+        margin-top: 5px;
     }
 }
 </style>
