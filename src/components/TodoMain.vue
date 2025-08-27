@@ -9,7 +9,8 @@
                 class="todo-input"
             >
             <button @click="addTodo" class="add-btn">添加</button>
-            <button @click="selectAll" class="add-btn">全选</button>
+            <button @click="selectAll" v-if="todos.length>0" class="add-btn">全选</button>
+            <button @click="cancelSelectAll" v-if="todos.length>0" class="add-btn">取消全选</button>
             <button @click="deleteComplete" class="clear-btn">删除已完成</button>
         </div>
         <ul class="todo-list">
@@ -52,11 +53,11 @@
 </template>
 
 <script setup>
-import { ref,reactive } from 'vue'
+import { ref,reactive,watch } from 'vue'
 import { nanoid } from 'nanoid'
 let todo=ref("")
-// let todos=reactive([])
 let todos=reactive(JSON.parse(localStorage.getItem("todos"))||[])
+
 function addTodo(){
     let title=todo.value.trim()
     if(title!==""){
@@ -67,22 +68,33 @@ function addTodo(){
 }
 function todoDelete(id){
     todos.splice(todos.findIndex(item=>item.id===id),1)
+    localStorage.setItem("todos",JSON.stringify(todos))
 }
 function todoEdit(id){
     todos.find(item=>item.id===id).edit=true
+    localStorage.setItem("todos",JSON.stringify(todos))
 }
 function todoComplete(id){
     todos.find(item=>item.id===id).edit=false
+    localStorage.setItem("todos",JSON.stringify(todos))
 }
 function deleteComplete(){
     const remain = todos.filter(item => !item.isComplete)
     todos.length = 0               // 清空原数组
     todos.push(...remain)          // 再把保留项推回去（保持同一个代理对象）
+    localStorage.setItem("todos",JSON.stringify(todos))
 }
 function selectAll(){
     todos.forEach(item => {
         item.isComplete = true
     })
+    localStorage.setItem("todos",JSON.stringify(todos))
+}
+function cancelSelectAll(){
+    todos.forEach(item => {
+        item.isComplete = false
+    })
+    localStorage.setItem("todos",JSON.stringify(todos))
 }
 </script>
 
