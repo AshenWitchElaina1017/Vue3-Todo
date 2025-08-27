@@ -55,11 +55,13 @@
 import { ref,reactive } from 'vue'
 import { nanoid } from 'nanoid'
 let todo=ref("")
-let todos=reactive([])
+// let todos=reactive([])
+let todos=reactive(JSON.parse(localStorage.getItem("todos"))||[])
 function addTodo(){
     let title=todo.value.trim()
     if(title!==""){
         todos.push({id:nanoid(),title:title,edit:false,isComplete:false})
+        localStorage.setItem("todos",JSON.stringify(todos))
         todo.value=""
     }
 }
