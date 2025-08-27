@@ -1,6 +1,14 @@
 <template>
     <div class="todo-main">
         <div class="input-section">
+            <!-- 错误提示 -->
+            <div v-if="error" class="error-message">
+                {{ error }}
+            </div>
+            <!-- 加载状态 - 只在非添加操作时显示全局loading -->
+            <div v-if="loading && !addingTodo" class="loading-message">
+                正在处理中...
+            </div>
             <div class="input-group">
                 <input 
                     type="text" 
@@ -8,10 +16,12 @@
                     @keyup.enter="addTodo" 
                     placeholder="请输入待办事项"
                     class="todo-input"
+                    :disabled="addingTodo"
                 >
-                <button @click="addTodo" class="add-btn primary">
-                    <span class="btn-icon">+</span>
-                    添加
+                <button @click="addTodo" class="add-btn primary" :disabled="addingTodo">
+                    <span class="btn-icon" v-if="!addingTodo">+</span>
+                    <span class="btn-icon loading-spinner" v-else>⟳</span>
+                    {{ addingTodo ? '添加中...' : '添加' }}
                 </button>
             </div>
             <div class="action-buttons" v-if="todos.length>0">
@@ -25,7 +35,7 @@
                         取消全选
                     </button>
                 </div>
-                <button @click="deleteComplete" class="action-btn danger">
+                <button @click="deleteComplete" class="action-btn danger" :disabled="loading">
                     <span class="btn-icon">🗑</span>
                     删除已完成
                 </button>
@@ -54,7 +64,9 @@
                     <input 
                         type="checkbox" 
                         v-model="item.Complete" 
+                        @change="toggleComplete(item)"
                         class="todo-checkbox"
+                        :disabled="loading"
                     >
                     <input 
                         v-if="item.edit" 
@@ -67,16 +79,18 @@
                     </span>
                 </div>
                 <div class="todo-actions">
-                    <button @click="todoDelete(item.id)" class="delete-btn">删除</button>
+                    <button @click="todoDelete(item.id)" class="delete-btn" :disabled="loading">删除</button>
                     <button 
                         v-if="!item.edit" 
                         @click="todoEdit(item.id)" 
                         class="edit-btn"
+                        :disabled="loading"
                     >编辑</button>
                     <button 
                         v-else 
                         @click="todoComplete(item.id)" 
                         class="complete-btn"
+                        :disabled="loading"
                     >完成</button>
                 </div>
             </li>
@@ -95,12 +109,17 @@
     </div>
 </template>
 
-<script setup>
-import { ref,reactive,watch,computed } from 'vue'
-import { nanoid } from 'nanoid'
-let todo=ref("")
-let todos=reactive(JSON.parse(localStorage.getItem("todos"))||[])
-let currentFilter=ref('all') // 当前过滤状态：all, pending, completed
+<script setup lang="ts">
+import { ref, reactive, computed, onMounted } from 'vue'
+import { TodoApiService } from '../api/todoApi'
+import type { Todo } from '../api/todoApi'
+
+let todo = ref("")
+const todos = reactive<Todo[]>([])
+let currentFilter = ref('all') // 当前过滤状态：all, pending, completed
+let loading = ref(false)
+let addingTodo = ref(false)  // 专门用于添加todo的loading状态
+let error = ref('')
 
 // 计算过滤后的任务列表
 const filteredTodos = computed(() => {
@@ -115,47 +134,211 @@ const filteredTodos = computed(() => {
     }
 })
 
-function addTodo(){
-    let title=todo.value.trim()
-    if(title!==""){
-        todos.push({id:nanoid(),title:title,edit:false,Complete:false})
-        localStorage.setItem("todos",JSON.stringify(todos))
-        todo.value=""
+// 显示错误信息
+function showError(message: string) {
+    error.value = message
+    setTimeout(() => {
+        error.value = ''
+    }, 3000)
+}
+
+// 加载所有待办事项
+async function loadTodos() {
+    try {
+        loading.value = true
+        const data = await TodoApiService.getTodos()
+        todos.length = 0
+        todos.push(...data)
+    } catch (err) {
+        showError('加载待办事项失败')
+        console.error('加载失败:', err)
+    } finally {
+        loading.value = false
     }
 }
-function todoDelete(id){
-    todos.splice(todos.findIndex(item=>item.id===id),1)
-    localStorage.setItem("todos",JSON.stringify(todos))
+
+// 组件挂载时加载数据
+onMounted(() => {
+    loadTodos()
+})
+
+// 添加待办事项 - 乐观更新
+async function addTodo() {
+    const title = todo.value.trim()
+    if (title !== "") {
+        // 生成临时ID和临时todo对象
+        const tempId = 'temp_' + Date.now()
+        const tempTodo: Todo = {
+            id: tempId,
+            title: title,
+            edit: false,
+            Complete: false
+        }
+        
+        // 立即添加到前端列表（乐观更新）
+        todos.push(tempTodo)
+        todo.value = ""
+        
+        try {
+            addingTodo.value = true
+            // 异步调用后端API
+            const realTodo = await TodoApiService.addTodo(title)
+            
+            // API成功，替换临时todo为真实todo
+            const tempIndex = todos.findIndex(item => item.id === tempId)
+            if (tempIndex !== -1) {
+                todos.splice(tempIndex, 1, realTodo)
+            }
+        } catch (err) {
+            // API失败，移除临时添加的todo并显示错误
+            const tempIndex = todos.findIndex(item => item.id === tempId)
+            if (tempIndex !== -1) {
+                todos.splice(tempIndex, 1)
+            }
+            // 恢复输入框内容，让用户可以重试
+            todo.value = title
+            showError('添加待办事项失败，请重试')
+            console.error('添加失败:', err)
+        } finally {
+            addingTodo.value = false
+        }
+    }
 }
-function todoEdit(id){
-    todos.find(item=>item.id===id).edit=true
-    localStorage.setItem("todos",JSON.stringify(todos))
+
+// 删除待办事项 - 乐观更新
+async function todoDelete(id: string) {
+    const todoToDelete = todos.find(item => item.id === id)
+    if (!todoToDelete) return
+    
+    // 先从前端移除（乐观更新）
+    const index = todos.findIndex(item => item.id === id)
+    if (index === -1) return
+    
+    const removedTodo = todos.splice(index, 1)[0]
+    
+    try {
+        // 异步调用后端API
+        await TodoApiService.deleteTodo(todoToDelete)
+    } catch (err) {
+        // API失败，恢复被删除的todo
+        todos.splice(index, 0, removedTodo)
+        showError('删除待办事项失败，请重试')
+        console.error('删除失败:', err)
+    }
 }
-function todoComplete(id){
-    todos.find(item=>item.id===id).edit=false
-    localStorage.setItem("todos",JSON.stringify(todos))
+
+// 编辑待办事项
+async function todoEdit(id: string) {
+    const todoItem = todos.find(item => item.id === id)
+    if (todoItem) {
+        todoItem.edit = true
+    }
 }
-function deleteComplete(){
-    const remain = todos.filter(item => !item.Complete)
-    todos.length = 0               // 清空原数组
-    todos.push(...remain)          // 再把保留项推回去（保持同一个代理对象）
-    localStorage.setItem("todos",JSON.stringify(todos))
+
+// 完成编辑
+async function todoComplete(id: string) {
+    try {
+        loading.value = true
+        const todoItem = todos.find(item => item.id === id)
+        if (todoItem) {
+            todoItem.edit = false
+            await TodoApiService.updateTodo(todoItem)
+        }
+    } catch (err) {
+        showError('更新待办事项失败')
+        console.error('更新失败:', err)
+        // 恢复编辑状态
+        const todoItem = todos.find(item => item.id === id)
+        if (todoItem) {
+            todoItem.edit = true
+        }
+    } finally {
+        loading.value = false
+    }
 }
-function selectAll(){
-    todos.forEach(item => {
-        item.Complete = true
+
+// 切换完成状态 - 乐观更新
+async function toggleComplete(todoItem: Todo) {
+    // 状态已经在UI中改变了，直接调用API同步
+    try {
+        await TodoApiService.updateTodo(todoItem)
+    } catch (err) {
+        // API失败，恢复原状态
+        todoItem.Complete = !todoItem.Complete
+        showError('更新待办事项失败，请重试')
+        console.error('更新失败:', err)
+    }
+}
+
+// 删除已完成的待办事项
+async function deleteComplete() {
+    try {
+        loading.value = true
+        const updatedTodos = await TodoApiService.deleteCompletedTodos()
+        todos.length = 0
+        todos.push(...updatedTodos)
+    } catch (err) {
+        showError('删除已完成待办事项失败')
+        console.error('删除失败:', err)
+    } finally {
+        loading.value = false
+    }
+}
+
+// 全选 - 乐观更新
+async function selectAll() {
+    // 先保存当前状态，用于错误回滚
+    const previousStates = todos.map(todo => ({ id: todo.id, Complete: todo.Complete }))
+    
+    // 立即更新前端状态（乐观更新）
+    todos.forEach(todo => {
+        todo.Complete = true
     })
-    localStorage.setItem("todos",JSON.stringify(todos))
+    
+    try {
+        // 异步调用后端API
+        await TodoApiService.selectAllTodos()
+    } catch (err) {
+        // API失败，恢复之前的状态
+        previousStates.forEach(prevState => {
+            const todo = todos.find(t => t.id === prevState.id)
+            if (todo) {
+                todo.Complete = prevState.Complete
+            }
+        })
+        showError('全选失败，请重试')
+        console.error('全选失败:', err)
+    }
 }
-function cancelSelectAll(){
-    todos.forEach(item => {
-        item.Complete = false
+
+// 取消全选 - 乐观更新
+async function cancelSelectAll() {
+    // 先保存当前状态，用于错误回滚
+    const previousStates = todos.map(todo => ({ id: todo.id, Complete: todo.Complete }))
+    
+    // 立即更新前端状态（乐观更新）
+    todos.forEach(todo => {
+        todo.Complete = false
     })
-    localStorage.setItem("todos",JSON.stringify(todos))
+    
+    try {
+        // 异步调用后端API
+        await TodoApiService.cancelSelectAllTodos()
+    } catch (err) {
+        // API失败，恢复之前的状态
+        previousStates.forEach(prevState => {
+            const todo = todos.find(t => t.id === prevState.id)
+            if (todo) {
+                todo.Complete = prevState.Complete
+            }
+        })
+        showError('取消全选失败，请重试')
+        console.error('取消全选失败:', err)
+    }
 }
 
 // 设置过滤状态
-function setFilter(filter) {
+function setFilter(filter: string) {
     currentFilter.value = filter
 }
 </script>
@@ -174,6 +357,27 @@ function setFilter(filter) {
     display: flex;
     flex-direction: column;
     gap: 15px;
+}
+
+.error-message {
+    background-color: #fee;
+    border: 1px solid #fcc;
+    color: #c33;
+    padding: 10px 15px;
+    border-radius: 6px;
+    font-size: 14px;
+    margin-bottom: 10px;
+}
+
+.loading-message {
+    background-color: #e8f4fd;
+    border: 1px solid #bee5eb;
+    color: #0c5460;
+    padding: 10px 15px;
+    border-radius: 6px;
+    font-size: 14px;
+    margin-bottom: 10px;
+    text-align: center;
 }
 
 .input-group {
@@ -275,6 +479,22 @@ function setFilter(filter) {
     overflow: hidden;
 }
 
+.add-btn:disabled, .action-btn:disabled, .delete-btn:disabled, .edit-btn:disabled, .complete-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.todo-input:disabled {
+    background-color: #f8f9fa;
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.todo-checkbox:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 .add-btn.primary {
     background: linear-gradient(135deg, #3498db, #2980b9);
     color: white;
@@ -314,6 +534,16 @@ function setFilter(filter) {
 .btn-icon {
     font-size: 16px;
     font-weight: bold;
+}
+
+.loading-spinner {
+    display: inline-block;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
 
 .todo-list {
